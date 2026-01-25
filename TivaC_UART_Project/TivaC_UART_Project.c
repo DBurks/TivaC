@@ -20,6 +20,8 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <math.h>
+
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
 #include "driverlib/debug.h"
@@ -31,7 +33,6 @@
 #include "driverlib/sysctl.h"
 #include "driverlib/uart.h"
 #include "utils/uartstdio.h"
-#include <math.h>
 
 // ANSI Escpae Codes
 #define ANSI_COLOR_RED    "\x1b[31m"   // color if temp above max
@@ -47,6 +48,19 @@
 #define TEMP_MID         25.0
 #define TEMP_AMP         10.0
 
+// add modes between human readable, machine-json and machine-csv
+typedef enum {
+    MODE_HUMAN,         // ANSI, escape characters
+    MODE_MACHINE_JSON,  // machine readable json
+    MODE_MACHINE_CSV    // machine readable csv format
+} OutputMode_t;
+
+
+typedef enum {
+    ALARM_NONE = 0, 
+    ALARM_LOW = 1,
+    ALARM_HIGH = 2
+} AlarmState_t;
 
 //*****************************************************************************
 //
@@ -107,20 +121,42 @@ ConfigureUART(void)
 }
 
 void
-DisplayTemp(float current_temp) {
-    
+DisplayTemp(uint32_t timestamp, float current_temp, OutputMode_t currentMode ) {
+
     // compute the color to use
     char* color = ANSI_COLOR_GREEN;
-    if (current_temp >= TEMP_MAX_ALARM) color = ANSI_COLOR_RED;
-    else if (current_temp <= TEMP_MIN_ALARM) color = ANSI_COLOR_BLUE;
+    AlarmState_t alarm = ALARM_NONE;
+    
+    if (current_temp >= TEMP_MAX_ALARM) {
+        color = ANSI_COLOR_RED;
+        alarm = ALARM_HIGH;
+    }
+    else if (current_temp <= TEMP_MIN_ALARM) {
+        color = ANSI_COLOR_BLUE;
+        alarm = ALARM_LOW;
+    }
         
-    // use home to overwrite dashboard in place
-    UARTprintf(ANSI_CURSOR_HOME);
-    UARTprintf("----------------------------------\n");
-    UARTprintf("HTIVA C LIVE TELEMETRY            \n");
-    UARTprintf("----------------------------------\n");
-    UARTprintf(" Temp: %s%d.%d C%s \n", color, (int) current_temp, (int)(current_temp *10) %10, ANSI_COLOR_RESET);
-    UARTprintf("----------------------------------\n");
+    if (currentMode == MODE_HUMAN) {
+        
+        // use home to overwrite dashboard in place
+        UARTprintf(ANSI_CURSOR_HOME);
+        UARTprintf("----------------------------------\n");
+        UARTprintf("HTIVA C LIVE TELEMETRY            \n");
+        UARTprintf("----------------------------------\n");
+        UARTprintf(" Temp: %s%d.%d C%s \n", color, (int) current_temp, (int)(current_temp *10) %10, ANSI_COLOR_RESET);
+        UARTprintf("----------------------------------\n");
+    } else if (currentMode == MODE_MACHINE_JSON) {
+        UARTprintf("{\"time\": %d, \"temp\": %d.%d, \"alarm\": %d}\n", 
+            timestamp, (int)current_temp, (int) (current_temp * 10) % 10,
+            alarm
+        );
+    }
+    else if (currentMode == MODE_MACHINE_CSV) {
+        UARTprintf("%d, %d.%d, %d\n", 
+            timestamp, (int)current_temp, (int) (current_temp * 10) % 10,
+            alarm
+        );
+    }
 }
 
 //*****************************************************************************
@@ -153,6 +189,12 @@ main(void)
     // we need an angle to feed into the sine functino
     float angle = 0.0;
 
+    // set my timestamp ticker
+    uint32_t timestamp = 0;
+
+    // initialize the output mode (default to json)
+    OutputMode_t currentMode = MODE_MACHINE_JSON;
+
     //
     // We are finished.  Hang around doing nothing.
     //
@@ -162,10 +204,11 @@ main(void)
         float current_temp = TEMP_MID + TEMP_AMP * sinf(angle);
 
         // display the temperature data
-        DisplayTemp(current_temp);
-
-        // change our angle evry cycle
+        DisplayTemp(timestamp, current_temp, currentMode);
+        
+        // change our angle evry cycle and increment timestamp
         angle += 0.05;
+        timestamp++;
         
         // wait a little bit
         SysCtlDelay(SysCtlClockGet() / 10);
