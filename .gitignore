@@ -1,5 +1,30 @@
-Debug
-Release
-.launches
-.settings
-.theia
+# --- CCS / Tiva C Ignores ---
+Debug/
+Release/
+.launches/
+.settings/
+.project
+.cproject
+.theia/
+
+# --- Python Ignores ---
+# Virtual Environment
+venv/
+.venv/
+env/
+ENV/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Local configuration / IDEs
+.vscode/
+.idea/
+*.swp
