@@ -50,3 +50,34 @@ The serial plotter is located in the `Python_Serial_Plotter` directory.
 1. **Navigate to the folder:**
    ```bash
    cd Python_Serial_Plotter
+
+---
+
+## 🎮 Milestone 4.5: Interactive Tkinter Control Panel
+
+This stage introduces bi-directional communication. The Python application now acts as a "Controller," allowing you to send commands back to the Tiva C to update alarm thresholds on the fly.
+
+![Interactive GUI Demo](./Python_Serial_Plotter/Demo.png)
+
+### Key Features
+1. **Tkinter Integration:** A structured desktop application embedding the Matplotlib canvas.
+2. **Bi-Directional Command Stream:**
+    * Moving the **Max Slider** sends `M[value]\n` to the Tiva C.
+    * Moving the **Min Slider** sends `L[value]\n` to the Tiva C.
+3. **Live Threshold Indicators:** Red and Blue dashed lines on the plot update in real-time as you move the sliders.
+4. **Threaded Data Processing:** Serial communication runs on a background thread to ensure the UI remains responsive at high data rates.
+
+### Usage
+1. Navigate to the folder:
+   ```bash
+   cd Python_Serial_Plotter
+2. Create and Activate a virual environment:
+    * Windows ```python -m venv .venv .venv\Scripts\activate```
+    * Linux/Mac: ```python -m venv .venv source .venv/bin/activate```
+3. Install dependencies: Essential for matplotlib, pyserial, and tkinter spport.
+    ```bash
+    pip install -r requirements.txt
+2. Run the interactive app:
+    ```bash
+   python TelemetryApp.py
+3. Use the ssliders on the right to adjust the Tiva C's internal alarm logic.
