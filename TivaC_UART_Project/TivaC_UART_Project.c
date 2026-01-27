@@ -19,10 +19,12 @@
 //*****************************************************************************
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <stdbool.h>
 #include <math.h>
 
 #include "inc/hw_memmap.h"
+#include "inc/hw_ints.h"
 #include "inc/hw_types.h"
 #include "driverlib/debug.h"
 #include "driverlib/fpu.h"
@@ -43,8 +45,6 @@
 #define ANSI_CURSOR_HOME  "\x1b[H"     // returns the cursor to the home position
 
 // Simulation Constraints
-#define TEMP_MIN_ALARM   20.0
-#define TEMP_MAX_ALARM   30.0
 #define TEMP_MID         25.0
 #define TEMP_AMP         10.0
 
@@ -61,6 +61,14 @@ typedef enum {
     ALARM_LOW = 1,
     ALARM_HIGH = 2
 } AlarmState_t;
+
+// Thresholds are now variables, not constants
+volatile float g_ui32TempMax = 30.0;
+volatile float g_ui32TempMin = 20.0;
+
+// Buffer for incoming characters
+char g_cInputBuffer[10];
+int g_iBufferIdx = 0;
 
 //*****************************************************************************
 //
@@ -83,6 +91,36 @@ __error__(char *pcFilename, uint32_t ui32Line)
 {
 }
 #endif
+
+
+void UARTIntHandler(void) {
+    uint32_t ui32Status;
+    ui32Status = ROM_UARTIntStatus(UART0_BASE, true); // Get interrupt status
+    ROM_UARTIntClear(UART0_BASE, ui32Status);        // Clear the interrupt
+
+    while(ROM_UARTCharsAvail(UART0_BASE)) {
+    char c = ROM_UARTCharGetNonBlocking(UART0_BASE);
+
+        // If we hit a newline, process the command
+        if (c == '\n' || c == '\r') {
+            g_cInputBuffer[g_iBufferIdx] = '\0'; // Null terminate
+            
+            if (g_iBufferIdx > 1) {
+                // Parse: M35 or L15
+                char cmd = g_cInputBuffer[0];
+                float val = (float)atoi(&g_cInputBuffer[1]);
+
+                if (cmd == 'M') g_ui32TempMax = val;
+                if (cmd == 'L') g_ui32TempMin = val;
+            }
+            g_iBufferIdx = 0; // Reset buffer
+        } 
+        else if (g_iBufferIdx < 9) {
+            g_cInputBuffer[g_iBufferIdx++] = c;
+        }
+    }
+}
+
 
 //*****************************************************************************
 //
@@ -118,6 +156,14 @@ ConfigureUART(void)
     // Initialize the UART for console I/O.
     //
     UARTStdioConfig(0, 115200, 16000000);
+
+    // Enable UART Interrupts
+    ROM_IntEnable(INT_UART0); 
+    ROM_UARTIntEnable(UART0_BASE, UART_INT_RX | UART_INT_RT);
+    
+    // Set the handler (if not defined in startup_ccs.c)
+    UARTIntRegister(UART0_BASE, UARTIntHandler);
+
 }
 
 void
@@ -127,11 +173,11 @@ DisplayTemp(uint32_t timestamp, float current_temp, OutputMode_t currentMode ) {
     char* color = ANSI_COLOR_GREEN;
     AlarmState_t alarm = ALARM_NONE;
     
-    if (current_temp >= TEMP_MAX_ALARM) {
+    if (current_temp >= g_ui32TempMax) {
         color = ANSI_COLOR_RED;
         alarm = ALARM_HIGH;
     }
-    else if (current_temp <= TEMP_MIN_ALARM) {
+    else if (current_temp <= g_ui32TempMin) {
         color = ANSI_COLOR_BLUE;
         alarm = ALARM_LOW;
     }
@@ -158,6 +204,7 @@ DisplayTemp(uint32_t timestamp, float current_temp, OutputMode_t currentMode ) {
         );
     }
 }
+
 
 //*****************************************************************************
 //
