@@ -35,6 +35,8 @@
 #include "driverlib/sysctl.h"
 #include "driverlib/uart.h"
 #include "utils/uartstdio.h"
+#include "driverlib/i2c.h"
+#include "inc/hw_i2c.h"
 
 // ANSI Escpae Codes
 #define ANSI_COLOR_RED    "\x1b[31m"   // color if temp above max
@@ -47,6 +49,9 @@
 // Simulation Constraints
 #define TEMP_MID         25.0
 #define TEMP_AMP         10.0
+
+// Sensor Address
+#define AHT20_ADDR 0x38
 
 // add modes between human readable, machine-json and machine-csv
 typedef enum {
@@ -166,8 +171,80 @@ ConfigureUART(void)
 
 }
 
+void ConfigureI2C(void) {
+    // Enable I2C1 and GPIOA peripherals
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
+    while(!SysCtlPeripheralReady(SYSCTL_PERIPH_GPIOA));
+    
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_I2C1);
+    while(!SysCtlPeripheralReady(SYSCTL_PERIPH_I2C1));
+    
+    // Configure pins for I2C1 (PA6 = SCL and PA7 = SDA)
+    GPIOPinConfigure(GPIO_PA6_I2C1SCL);
+    GPIOPinConfigure(GPIO_PA7_I2C1SDA);
+    
+    GPIOPinTypeI2CSCL(GPIO_PORTA_BASE, GPIO_PIN_6);
+    GPIOPinTypeI2C(GPIO_PORTA_BASE, GPIO_PIN_7);
+
+    // Initialize Master (false = 100knps, true = 400 kbps)
+    I2CMasterInitExpClk(I2C1_BASE, SysCtlClockGet(), false);
+}
+
+void ReadAHT20(float *temp, float *hum) {
+    uint32_t data[6];
+    
+    // 1. Send Trigger Measurement Command (0xAC, 0x33, 0x00)
+    I2CMasterSlaveAddrSet(I2C1_BASE, AHT20_ADDR, false);
+    I2CMasterDataPut(I2C1_BASE, 0xAC);
+    I2CMasterControl(I2C1_BASE, I2C_MASTER_CMD_BURST_SEND_START);
+    while(I2CMasterBusy(I2C1_BASE));
+
+    I2CMasterDataPut(I2C1_BASE, 0x33);
+    I2CMasterControl(I2C1_BASE, I2C_MASTER_CMD_BURST_SEND_CONT);
+    while(I2CMasterBusy(I2C1_BASE));
+
+    I2CMasterDataPut(I2C1_BASE, 0x00);
+    I2CMasterControl(I2C1_BASE, I2C_MASTER_CMD_BURST_SEND_FINISH);
+    while(I2CMasterBusy(I2C1_BASE));
+
+    // 2. Wait ~80ms for sensor to finish
+    SysCtlDelay(SysCtlClockGet() / (30 * 12));
+
+    // 2b. Poll busy bit
+    uint8_t status = 0x80;
+    I2CMasterSlaveAddrSet(I2C1_BASE, AHT20_ADDR, true);
+
+    while (status & 0x80) {
+        I2CMasterControl(I2C1_BASE, I2C_MASTER_CMD_SINGLE_RECEIVE);
+        while (I2CMasterBusy(I2C1_BASE));
+        status = I2CMasterDataGet(I2C1_BASE);
+    }
+
+
+
+    // 3. Read 6 bytes back
+    I2CMasterSlaveAddrSet(I2C1_BASE, AHT20_ADDR, true);
+    int i;
+    for (i = 0; i < 6; i++) {
+        uint32_t cmd = (i == 0) ? I2C_MASTER_CMD_BURST_RECEIVE_START :
+                       (i == 5) ? I2C_MASTER_CMD_BURST_RECEIVE_FINISH :
+                                  I2C_MASTER_CMD_BURST_RECEIVE_CONT;
+        I2CMasterControl(I2C1_BASE, cmd);
+        while (I2CMasterBusy(I2C1_BASE)) ;
+        
+        data[i] = I2CMasterDataGet(I2C1_BASE);
+    }
+
+    // 4. Conversion Math 
+    uint32_t raw_hum = ((data[1] << 12) | (data[2] << 4) | (data[3] >> 4));
+    uint32_t raw_temp = (((data[3] & 0x0F) << 16) | (data[4] << 8) | data[5]);
+
+    *hum = (float) raw_hum * 100.0/ 1048576.0;
+    *temp = ((float) raw_temp * 200.0 / 1045876.0) - 50.0;
+}
+
 void
-DisplayTemp(uint32_t timestamp, float current_temp, OutputMode_t currentMode ) {
+DisplayTemp(uint32_t timestamp, float current_temp, float current_humidity, OutputMode_t currentMode ) {
 
     // compute the color to use
     char* color = ANSI_COLOR_GREEN;
@@ -192,8 +269,9 @@ DisplayTemp(uint32_t timestamp, float current_temp, OutputMode_t currentMode ) {
         UARTprintf(" Temp: %s%d.%d C%s \n", color, (int) current_temp, (int)(current_temp *10) %10, ANSI_COLOR_RESET);
         UARTprintf("----------------------------------\n");
     } else if (currentMode == MODE_MACHINE_JSON) {
-        UARTprintf("{\"time\": %d, \"temp\": %d.%d, \"alarm\": %d}\n", 
+        UARTprintf("{\"time\": %d, \"temp\": %d.%d, \"humidity\":%d.%d, \"alarm\": %d, \"source\":\"AHT20\" }\n", 
             timestamp, (int)current_temp, (int) (current_temp * 10) % 10,
+             (int)current_humidity, (int) (current_humidity * 10) % 10,
             alarm
         );
     }
@@ -233,6 +311,8 @@ main(void)
     //
     ConfigureUART();
 
+    ConfigureI2C();
+
     // we need an angle to feed into the sine functino
     float angle = 0.0;
 
@@ -248,10 +328,11 @@ main(void)
     while(1)
     {
         // calculate our simulated temperature
-        float current_temp = TEMP_MID + TEMP_AMP * sinf(angle);
+        float current_temp, current_humidity;
+        ReadAHT20(&current_temp, &current_humidity);
 
         // display the temperature data
-        DisplayTemp(timestamp, current_temp, currentMode);
+        DisplayTemp(timestamp, current_temp, current_humidity, currentMode);
         
         // change our angle evry cycle and increment timestamp
         angle += 0.05;
