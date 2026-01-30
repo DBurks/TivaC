@@ -4,6 +4,9 @@ import serial
 import json
 import threading
 import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.collections import LineCollection
+from matplotlib.colors import ListedColormap, BoundaryNorm
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.animation import FuncAnimation
 
@@ -129,6 +132,22 @@ class TelemetryApp:
 
         self.ax.set_ylim(10,50 )
         self.ax.grid(True, alpha=0.3)
+
+        # 1. Create Points and Segments
+        points = np.array([self.x_data, self.y_data]).T.reshape(-1,1, 2)
+        segments = np.concatenate([points[:-1], points[1:]], axis=1)
+
+        # 2. Create a colormap and norm based on thresholds
+        cmap = ListedColormap(['blue', 'green', 'red'])
+        norm = BoundaryNorm([0, self.min_threshold, self.max_threshold, 100], cmap.N)
+
+        # 3. Create LineCollection
+        lc = LineCollection(segments, cmap=cmap, norm=norm)
+        lc.set_array(np.array(self.y_data))
+        lc.set_linewidth(2)
+
+        # 4. Add LineCollection to Axes
+        self.ax.add_collection(lc)
 
         # Draw Threshold lines
         self.ax.axhline(self.max_threshold, color='red', linestyle='--', alpha=0.5)
