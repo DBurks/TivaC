@@ -120,6 +120,13 @@ class TelemetryApp:
             return
         
         self.ax.clear()
+        
+        oldest_time = self.x_data[0]
+        newest_time = self.x_data[-1]
+        
+        margin = 2
+        self.ax.set_xlim(oldest_time - margin, newest_time + margin)
+
         self.ax.set_ylim(10,50 )
         self.ax.grid(True, alpha=0.3)
 
