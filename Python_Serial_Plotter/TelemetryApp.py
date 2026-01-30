@@ -36,6 +36,32 @@ class TelemetryApp:
         # --- Animation ---
         self.ani = FuncAnimation(self.fig, self.update_plot, interval=50, cache_frame_data=False)
 
+        # --- Attach Window Exit Handler ---
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def on_close(self):
+        """Stops the serial thread and closes the window properly"""
+        print("Shutdown Signal received. Closing serial port...")
+        # 1. Signal thread to stop
+        self.running = False
+
+        # 2. close the serial to break readline calls
+        if self.ser and self.ser.is_open:
+            self.ser.close()
+
+        # 3. Wait for thread to die
+        if hasattr(self, 'serial_thread') and self.serial_thread.is_alive():
+            self.serial_thread.join(timeout=1.0)
+
+        # 4. Stop the animation
+        if hasattr(self, 'ani'):
+            self.ani.event_source.stop()
+
+        # 5. Destroy the window
+        self.root.quit()
+        self.root.destroy()
+        print("Exit scucessful")
+
     def setup_ui(self):
         # Sidebar for controls
         sidebar = ttk.Frame(self.root, padding="10")
@@ -86,6 +112,10 @@ class TelemetryApp:
                         pass
 
     def update_plot(self, frame):
+        # app is shutting down so don;t redraw
+        if not self.running or not self.root.winfo_exists():
+            return
+        
         if not self.x_data:
             return
         
