@@ -10,6 +10,7 @@ from matplotlib.colors import ListedColormap, BoundaryNorm
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.animation import FuncAnimation
 
+
 class TelemetryApp:
     def __init__(self, root):
         self.root = root
@@ -24,7 +25,7 @@ class TelemetryApp:
 
         # --- Serial Configuration ---
         try:
-            self.ser = serial.Serial('COM4', 115200, timeout=0.1)
+            self.ser = serial.Serial("COM4", 115200, timeout=0.1)
         except Exception as e:
             print(f"Error opening serial port: {e}")
             self.ser = None
@@ -37,7 +38,9 @@ class TelemetryApp:
         self.serial_thread.start()
 
         # --- Animation ---
-        self.ani = FuncAnimation(self.fig, self.update_plot, interval=50, cache_frame_data=False)
+        self.ani = FuncAnimation(
+            self.fig, self.update_plot, interval=50, cache_frame_data=False
+        )
 
         # --- Attach Window Exit Handler ---
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -53,11 +56,11 @@ class TelemetryApp:
             self.ser.close()
 
         # 3. Wait for thread to die
-        if hasattr(self, 'serial_thread') and self.serial_thread.is_alive():
+        if hasattr(self, "serial_thread") and self.serial_thread.is_alive():
             self.serial_thread.join(timeout=1.0)
 
         # 4. Stop the animation
-        if hasattr(self, 'ani'):
+        if hasattr(self, "ani"):
             self.ani.event_source.stop()
 
         # 5. Destroy the window
@@ -70,22 +73,28 @@ class TelemetryApp:
         sidebar = ttk.Frame(self.root, padding="10")
         sidebar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        ttk.Label(sidebar, text="Threshold Controls", font=('Helvetica', 12, 'bold')).pack(pady=10)
+        ttk.Label(
+            sidebar, text="Threshold Controls", font=("Helvetica", 12, "bold")
+        ).pack(pady=10)
 
         # Max Threshold Slider
         ttk.Label(sidebar, text="Max Temp (Red Alarm)").pack()
-        self.max_slider = ttk.Scale(sidebar, from_=25, to=45, orient=tk.HORIZONTAL, command=self.update_max)
+        self.max_slider = ttk.Scale(
+            sidebar, from_=25, to=45, orient=tk.HORIZONTAL, command=self.update_max
+        )
         self.max_slider.set(self.max_threshold)
         self.max_slider.pack(pady=5)
 
-        #Min Threshold Slider
+        # Min Threshold Slider
         ttk.Label(sidebar, text="Min Temp (Blue Alarm)").pack()
-        self.min_slider = ttk.Scale(sidebar, from_=10, to=25, orient=tk.HORIZONTAL, command=self.update_min)
+        self.min_slider = ttk.Scale(
+            sidebar, from_=10, to=25, orient=tk.HORIZONTAL, command=self.update_min
+        )
         self.min_slider.set(self.min_threshold)
         self.min_slider.pack(pady=5)
 
         # Plot Area
-        self.fig, self.ax = plt.subplots(figsize=(6,4), dpi=100)
+        self.fig, self.ax = plt.subplots(figsize=(6, 4), dpi=100)
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.root)
         self.canvas.get_tk_widget().pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -102,12 +111,12 @@ class TelemetryApp:
     def read_serial(self):
         while self.running:
             if self.ser and self.ser.in_waiting:
-                line = self.ser.readline().decode('utf-8').strip()
-                if line.startswith('{'):
+                line = self.ser.readline().decode("utf-8").strip()
+                if line.startswith("{"):
                     try:
                         data = json.loads(line)
-                        self.x_data.append(data['time'])
-                        self.y_data.append(data['temp'])
+                        self.x_data.append(data["time"])
+                        self.y_data.append(data["temp"])
                         if len(self.x_data) > 50:
                             self.x_data.pop(0)
                             self.y_data.pop(0)
@@ -118,27 +127,27 @@ class TelemetryApp:
         # app is shutting down so don;t redraw
         if not self.running or not self.root.winfo_exists():
             return
-        
+
         if not self.x_data:
             return
-        
+
         self.ax.clear()
-        
+
         oldest_time = self.x_data[0]
         newest_time = self.x_data[-1]
-        
+
         margin = 2
         self.ax.set_xlim(oldest_time - margin, newest_time + margin)
 
-        self.ax.set_ylim(10,50 )
+        self.ax.set_ylim(10, 50)
         self.ax.grid(True, alpha=0.3)
 
         # 1. Create Points and Segments
-        points = np.array([self.x_data, self.y_data]).T.reshape(-1,1, 2)
+        points = np.array([self.x_data, self.y_data]).T.reshape(-1, 1, 2)
         segments = np.concatenate([points[:-1], points[1:]], axis=1)
 
         # 2. Create a colormap and norm based on thresholds
-        cmap = ListedColormap(['blue', 'green', 'red'])
+        cmap = ListedColormap(["blue", "green", "red"])
         norm = BoundaryNorm([0, self.min_threshold, self.max_threshold, 100], cmap.N)
 
         # 3. Create LineCollection
@@ -150,30 +159,30 @@ class TelemetryApp:
         self.ax.add_collection(lc)
 
         # Draw Threshold lines
-        self.ax.axhline(self.max_threshold, color='red', linestyle='--', alpha=0.5)
-        self.ax.axhline(self.min_threshold, color='blue', linestyle='--', alpha=0.5)
+        self.ax.axhline(self.max_threshold, color="red", linestyle="--", alpha=0.5)
+        self.ax.axhline(self.min_threshold, color="blue", linestyle="--", alpha=0.5)
 
         # Plot the data
         # Note: We will implement segmented coloring in the next step
-        self.ax.plot(self.x_data, self.y_data, color='gray', alpha=0.5)
+        self.ax.plot(self.x_data, self.y_data, color="gray", alpha=0.5)
 
         # Scatter points with conditional colors
         for x, y in zip(self.x_data, self.y_data):
-            color = 'green'
+            color = "green"
             if y >= self.max_threshold:
-                color = 'red'
+                color = "red"
             elif y <= self.min_threshold:
-                color = 'blue'
+                color = "blue"
             else:
-                color = 'green'
+                color = "green"
             self.ax.scatter(x, y, color=color, s=15)
 
-        self.ax.set_xlabel('Ticks')
-        self.ax.set_ylabel('Temperature (°C)')
-        self.ax.set_title(f'Live Temp: {self.y_data[-1]:.1f} °C')
+        self.ax.set_xlabel("Ticks")
+        self.ax.set_ylabel("Temperature (°C)")
+        self.ax.set_title(f"Live Temp: {self.y_data[-1]:.1f} °C")
+
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = TelemetryApp(root)
     root.mainloop()
-
